@@ -11,7 +11,11 @@ import torch
 from pydantic import ConfigDict, SkipValidation, field_validator, model_validator
 from pydantic.dataclasses import dataclass
 from safetensors.torch import _TYPES as _SAFETENSORS_TO_TORCH_DTYPE
-from transformers.configuration_utils import ALLOWED_LAYER_TYPES
+try:
+    from transformers.configuration_utils import ALLOWED_LAYER_TYPES
+except ImportError:
+    # transformers >= 5.0 renamed ALLOWED_LAYER_TYPES to ALLOWED_MLP_LAYER_TYPES
+    from transformers.configuration_utils import ALLOWED_MLP_LAYER_TYPES as ALLOWED_LAYER_TYPES  # noqa: E501
 
 import vllm.envs as envs
 from vllm.attention.backends.registry import AttentionBackendEnum

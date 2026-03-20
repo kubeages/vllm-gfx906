@@ -22,7 +22,10 @@ from typing import TYPE_CHECKING, Literal
 
 import torch
 from torch import nn
-from transformers.configuration_utils import ALLOWED_LAYER_TYPES
+try:
+    from transformers.configuration_utils import ALLOWED_LAYER_TYPES
+except ImportError:
+    from transformers.configuration_utils import ALLOWED_MLP_LAYER_TYPES as ALLOWED_LAYER_TYPES  # noqa: E501
 
 from vllm.config.utils import getattr_iter
 from vllm.logger import init_logger

@@ -15,7 +15,10 @@ from huggingface_hub import (
 )
 from packaging.version import Version
 from transformers import GenerationConfig, PretrainedConfig
-from transformers.configuration_utils import ALLOWED_LAYER_TYPES
+try:
+    from transformers.configuration_utils import ALLOWED_LAYER_TYPES
+except ImportError:
+    from transformers.configuration_utils import ALLOWED_MLP_LAYER_TYPES as ALLOWED_LAYER_TYPES  # noqa: E501
 from transformers.models.auto.image_processing_auto import get_image_processor_config
 from transformers.models.auto.modeling_auto import (
     MODEL_FOR_CAUSAL_LM_MAPPING_NAMES,
