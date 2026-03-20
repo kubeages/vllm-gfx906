@@ -1099,8 +1099,17 @@ class Qwen3_5ForCausalLM(
     def load_weights(
         self, weights: Iterable[tuple[str, torch.Tensor]]
     ) -> set[str]:
+        # Qwen3.5 checkpoint nests the language model under
+        # "model.language_model.*" but this CausalLM class maps it
+        # directly to "model.*".  Strip the extra prefix so weights
+        # resolve to the correct parameters.
+        def _remap(weights):
+            for name, tensor in weights:
+                name = name.replace("model.language_model.", "model.")
+                yield name, tensor
+
         loader = AutoWeightsLoader(
             self,
             skip_prefixes=["mtp.", "visual."],
         )
-        return loader.load_weights(weights)
+        return loader.load_weights(_remap(weights))
