@@ -1218,14 +1218,19 @@ def get_kv_cache_groups(
         # same window size). Put all layers into one group.
         return _get_kv_cache_groups_uniform_type(uniform_spec)
 
-    # As KVCacheManager can only allocate memory of one size, we need to unify
-    # the page size of the layers. For cases cannot be unified, this function
-    # will raise an error.
-    kv_cache_spec = unify_kv_cache_spec_page_size(kv_cache_spec)
-    # Model contains multiple attention types, but KV cache of all layers
-    # have the same physical memory per block per layer. Split the layers
-    # into groups with the same number of layers, and thus same total page
-    # size.
+    # Try to unify page sizes across layers. For hybrid architectures
+    # (e.g. Qwen3.5 with FullAttention + MambaSpec/GatedDeltaNet layers)
+    # the page sizes may not be divisible, in which case we fall back to
+    # grouping layers by type directly without unifying page sizes.
+    # This is safe because _get_kv_cache_groups_uniform_page_size groups
+    # by spec type and handles heterogeneous page sizes per group.
+    try:
+        kv_cache_spec = unify_kv_cache_spec_page_size(kv_cache_spec)
+    except NotImplementedError:
+        logger.debug(
+            "Cannot unify KV cache page sizes across layers; "
+            "falling back to per-type grouping (hybrid model)."
+        )
     return _get_kv_cache_groups_uniform_page_size(kv_cache_spec)
 
 
