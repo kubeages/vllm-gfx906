@@ -261,6 +261,10 @@ class MambaSpec(KVCacheSpec):
 
     def max_memory_usage_bytes(self, vllm_config: VllmConfig) -> int:
         max_model_len = vllm_config.model_config.max_model_len
+        # block_size may be None before the scheduler assigns it (vllm 0.12.0
+        # compat: in newer vllm this check happens after block_size is set)
+        if self.block_size is None:
+            return 0
         return cdiv(max_model_len, self.block_size) * self.page_size_bytes
 
 
