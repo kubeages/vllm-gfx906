@@ -22,10 +22,15 @@ from typing import TYPE_CHECKING, Literal
 
 import torch
 from torch import nn
+# Patched for forward-compatibility with transformers >= 5.0:
+# ALLOWED_LAYER_TYPES was renamed; we fall back to ALLOWED_MLP_LAYER_TYPES if needed.
 try:
     from transformers.configuration_utils import ALLOWED_LAYER_TYPES
 except ImportError:
-    from transformers.configuration_utils import ALLOWED_MLP_LAYER_TYPES as ALLOWED_LAYER_TYPES  # noqa: E501
+    try:
+        from transformers.configuration_utils import ALLOWED_MLP_LAYER_TYPES as ALLOWED_LAYER_TYPES
+    except ImportError:
+        ALLOWED_LAYER_TYPES = {"full_attention", "linear_attention", "mamba", "mlp"}
 
 from vllm.config.utils import getattr_iter
 from vllm.logger import init_logger
@@ -214,3 +219,4 @@ def can_enable_torch_compile(vllm_config: "VllmConfig") -> bool:
             rope_parameters = {"": rope_parameters}
         return all(rp["rope_type"] != "dynamic" for rp in rope_parameters.values())
     return True
+

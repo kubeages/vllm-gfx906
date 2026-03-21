@@ -15,10 +15,15 @@ from huggingface_hub import (
 )
 from packaging.version import Version
 from transformers import GenerationConfig, PretrainedConfig
+# Patched for forward-compatibility with transformers >= 5.0:
+# ALLOWED_LAYER_TYPES was renamed; we fall back to ALLOWED_MLP_LAYER_TYPES if needed.
 try:
     from transformers.configuration_utils import ALLOWED_LAYER_TYPES
 except ImportError:
-    from transformers.configuration_utils import ALLOWED_MLP_LAYER_TYPES as ALLOWED_LAYER_TYPES  # noqa: E501
+    try:
+        from transformers.configuration_utils import ALLOWED_MLP_LAYER_TYPES as ALLOWED_LAYER_TYPES
+    except ImportError:
+        ALLOWED_LAYER_TYPES = {"full_attention", "linear_attention", "mamba", "mlp"}
 from transformers.models.auto.image_processing_auto import get_image_processor_config
 from transformers.models.auto.modeling_auto import (
     MODEL_FOR_CAUSAL_LM_MAPPING_NAMES,
@@ -90,7 +95,6 @@ _CONFIG_REGISTRY: dict[str, type[PretrainedConfig]] = LazyConfigDict(
     ultravox="UltravoxConfig",
     step3_vl="Step3VLConfig",
     step3_text="Step3TextConfig",
-    qwen3_5="Qwen3_5Config",
     qwen3_next="Qwen3NextConfig",
     lfm2_moe="Lfm2MoeConfig",
 )
@@ -1083,3 +1087,4 @@ def _maybe_retrieve_max_pos_from_hf(model, revision, **kwargs) -> int:
         )
 
     return max_position_embeddings
+
