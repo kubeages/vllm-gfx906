@@ -69,7 +69,7 @@ RUN apt-get update -y \
     && ln -sf /usr/bin/python${PYTHON_VERSION}-config /usr/bin/python3-config \
     && curl -sS https://bootstrap.pypa.io/get-pip.py -o /tmp/get-pip.py \
     && python${PYTHON_VERSION} /tmp/get-pip.py --ignore-installed \
-    && pip install -U packaging 'cmake<4' ninja wheel 'setuptools<80' pybind11 Cython \
+    && pip install --ignore-installed packaging 'cmake<4' ninja wheel 'setuptools<80' pybind11 Cython \
     && rm -rf /var/lib/apt/lists/*
 
 
