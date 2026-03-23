@@ -18,7 +18,7 @@
 # ---------------------------------------------------------------------------
 # Build arguments
 # ---------------------------------------------------------------------------
-ARG BASE_IMAGE=rocm/dev-ubuntu-22.04:7.0-complete
+ARG BASE_IMAGE=rocm/dev-ubuntu-24.04:7.0-complete
 
 # Component versions (pinned to vLLM v0.17.1 compatibility)
 ARG PYTORCH_REPO=https://github.com/ROCm/pytorch.git
@@ -269,7 +269,7 @@ WORKDIR /app
 ARG VLLM_TAG
 RUN echo "vLLM: ${VLLM_TAG}" > /app/versions.txt \
     && echo "ROCM_ARCH: gfx906" >> /app/versions.txt \
-    && echo "BASE: ${BASE_IMAGE:-rocm/dev-ubuntu-22.04:7.0-complete}" >> /app/versions.txt \
+    && echo "BASE: ${BASE_IMAGE:-rocm/dev-ubuntu-24.04:7.0-complete}" >> /app/versions.txt \
     && python3 -c "import torch; print(f'PyTorch: {torch.__version__}')" >> /app/versions.txt
 
 CMD ["/bin/bash"]
