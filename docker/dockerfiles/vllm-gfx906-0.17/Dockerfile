@@ -177,11 +177,6 @@ FROM base AS build_vllm
 RUN --mount=type=bind,from=deps,src=/app/debs,target=/install \
     pip install /install/*.whl
 
-# Install Triton from nalanzeyu package dir (git34747741, confirmed gfx906 support)
-RUN --mount=type=bind,from=build_triton,src=/app/triton_pkg/triton,target=/triton_pkg \
-    cp -r /triton_pkg /usr/local/lib/python3.12/dist-packages/triton \
-    && python3 -c "import triton; print('Triton installed:', triton.__version__)"
-
 # Install uv for fast dependency resolution
 RUN curl -LsSf https://astral.sh/uv/install.sh | env UV_INSTALL_DIR="/usr/local/bin" sh
 ENV UV_HTTP_TIMEOUT=500
@@ -205,6 +200,13 @@ RUN cd vllm \
     && python3 setup.py clean --all \
     && SETUPTOOLS_SCM_PRETEND_VERSION="${VLLM_TAG#v}" \
        python3 setup.py bdist_wheel --dist-dir=dist
+
+# Install Triton from nalanzeyu LAST (overrides any version pulled by torch/vllm deps)
+RUN --mount=type=bind,from=build_triton,src=/app/triton_pkg/triton,target=/triton_src \
+    SITE=$(python3 -c "import site; print(site.getsitepackages()[0])") \
+    && rm -rf "$SITE/triton" \
+    && cp -r /triton_src "$SITE/triton" \
+    && python3 -c "import triton; print('Triton in build_vllm:', triton.__version__)"
 
 
 # ---------------------------------------------------------------------------
@@ -235,6 +237,14 @@ RUN --mount=type=bind,from=build_vllm,src=/app/vllm/dist/,target=/vllm_dist \
     --mount=type=bind,from=build_vllm,src=/app/vllm/requirements/,target=/vllm_reqs \
     pip install -r /vllm_reqs/rocm.txt \
     && pip install /vllm_dist/*.whl
+
+# Install Triton from nalanzeyu LAST (after vLLM/torch, to override any auto-installed version)
+# nalanzeyu Triton 3.5.0+git34747741 has confirmed gfx906 support in ConvertTritonAMDGPUToLLVM
+RUN --mount=type=bind,from=build_triton,src=/app/triton_pkg/triton,target=/triton_src \
+    SITE=$(python3 -c "import site; print(site.getsitepackages()[0])") \
+    && rm -rf "$SITE/triton" \
+    && cp -r /triton_src "$SITE/triton" \
+    && python3 -c "import triton; print('Triton final:', triton.__version__)"
 
 # Copy gfx906 MoE kernel configs
 COPY docker/dockerfiles/vllm-gfx906-0.17/patches/moe_configs/ /app/moe_configs/
