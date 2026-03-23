@@ -44,6 +44,8 @@ FROM ${BASE_IMAGE} AS base
 ENV PATH=/opt/rocm/llvm/bin:/opt/rocm/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 ENV ROCM_PATH=/opt/rocm
 ENV LD_LIBRARY_PATH=/opt/rocm/lib:/usr/local/lib:
+# Ubuntu 24.04 PEP 668: allow pip installs outside venv
+ENV PIP_BREAK_SYSTEM_PACKAGES=1
 
 # gfx906 ONLY — single arch = fastest possible build
 ENV PYTORCH_ROCM_ARCH=gfx906
@@ -59,11 +61,6 @@ WORKDIR /app
 RUN apt-get update -y \
     && apt-get install -y software-properties-common git curl sudo vim less \
        libgfortran5 libopenmpi-dev libpci-dev libjpeg-dev \
-    && for i in 1 2 3; do \
-        add-apt-repository -y ppa:deadsnakes/ppa && break || sleep 5; \
-    done \
-    && apt-get update -y \
-    && apt-get install -y \
        python${PYTHON_VERSION} python${PYTHON_VERSION}-dev \
        python${PYTHON_VERSION}-venv python${PYTHON_VERSION}-lib2to3 \
        python-is-python3 \
