@@ -276,7 +276,57 @@ fi
 
 
 # =============================================================================
-# 8. Disable AITER imports (gfx942/gfx950 only)
+# 8. AWQ _custom_ops.py fallback — ROCm builds don't compile awq_dequantize C++ kernel
+# =============================================================================
+echo "[gfx906] Patching _custom_ops.py — Python fallback for awq_dequantize/awq_gemm ..."
+cat > /tmp/gfx906_awq_ops_patch.py << 'PYEOF'
+with open("vllm/_custom_ops.py", "r") as f:
+    content = f.read()
+
+old_dequant = "    return torch.ops._C.awq_dequantize(qweight, scales, zeros, split_k_iters, thx, thy)"
+new_dequant = """    if not hasattr(torch.ops._C, "awq_dequantize"):
+        # gfx906 fallback: Python/PyTorch AWQ dequantize (C++ kernel not compiled in ROCm build)
+        pack_factor = 8
+        in_c, packed_out_c = qweight.shape
+        out_c = packed_out_c * pack_factor
+        group_size = in_c // scales.shape[0]
+        shifts = torch.arange(0, 32, 4, device=qweight.device, dtype=torch.int32)
+        weight_unpacked = (qweight.unsqueeze(-1) >> shifts) & 0xF
+        weight_unpacked = weight_unpacked.reshape(in_c, out_c).to(scales.dtype)
+        zeros_unpacked = (zeros.unsqueeze(-1) >> shifts) & 0xF
+        zeros_unpacked = zeros_unpacked.reshape(zeros.shape[0], out_c).to(scales.dtype)
+        scales_full = scales.repeat_interleave(group_size, dim=0)
+        zeros_full = zeros_unpacked.repeat_interleave(group_size, dim=0)
+        return (weight_unpacked - zeros_full) * scales_full
+    return torch.ops._C.awq_dequantize(qweight, scales, zeros, split_k_iters, thx, thy)"""
+
+old_gemm = "    return torch.ops._C.awq_gemm(input, qweight, scales, qzeros, split_k_iters)"
+new_gemm = """    if not hasattr(torch.ops._C, "awq_gemm"):
+        # gfx906 fallback: dequantize then matmul
+        dq = awq_dequantize(qweight, scales, qzeros, 0, 0, 0)
+        return torch.matmul(input, dq)
+    return torch.ops._C.awq_gemm(input, qweight, scales, qzeros, split_k_iters)"""
+
+patched = 0
+if old_dequant in content:
+    content = content.replace(old_dequant, new_dequant)
+    patched += 1
+if old_gemm in content:
+    content = content.replace(old_gemm, new_gemm)
+    patched += 1
+
+if patched > 0:
+    with open("vllm/_custom_ops.py", "w") as f:
+        f.write(content)
+    print(f"[gfx906]   -> _custom_ops.py: {patched} AWQ fallbacks patched")
+else:
+    print("[gfx906]   -> WARN: AWQ ops patterns not found, may need manual review")
+PYEOF
+python3 /tmp/gfx906_awq_ops_patch.py || echo "[gfx906]   -> WARN: AWQ ops patch failed"
+
+
+# =============================================================================
+# 10. Disable AITER imports (gfx942/gfx950 only)
 # =============================================================================
 echo "[gfx906] Ensuring AITER fallback for gfx906 ..."
 

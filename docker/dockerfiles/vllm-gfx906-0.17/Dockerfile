@@ -25,6 +25,8 @@ ARG PYTORCH_REPO=https://github.com/ROCm/pytorch.git
 ARG PYTORCH_BRANCH=89075173
 ARG PYTORCH_VISION_REPO=https://github.com/pytorch/vision.git
 ARG PYTORCH_VISION_BRANCH=v0.24.1
+# Triton: use nalanzeyu's build (git34747741) which has confirmed gfx906 support.
+# We extract it directly from the nalanzeyu image instead of building from source.
 ARG TRITON_REPO=https://github.com/ROCm/triton.git
 ARG TRITON_BRANCH=RI3.5.x
 ARG FA_REPO=https://github.com/Dao-AILab/flash-attention.git
@@ -74,26 +76,19 @@ RUN apt-get update -y \
 
 
 # ---------------------------------------------------------------------------
-# Stage: Build Triton (ROCm fork)
+# Stage: Extract Triton from nalanzeyu image (git34747741, confirmed gfx906 support)
+# Building Triton from source with RI3.5.x produces libtriton.so that has
+# ConvertTritonAMDGPUToLLVM failing on gfx906. The nalanzeyu build (3.5.0+git34747741)
+# works correctly. We repack it as a wheel-compatible directory install.
 # ---------------------------------------------------------------------------
+FROM docker.io/nalanzeyu/vllm-gfx906:latest AS triton_source
+
 FROM base AS build_triton
-ARG TRITON_BRANCH
-ARG TRITON_REPO
-RUN git clone --depth 1 --branch ${TRITON_BRANCH} ${TRITON_REPO} \
-    && cd triton \
-    # RI3.5.x layout: setup.py is at root; older layout has it under python/
-    && if [ -f setup.py ]; then \
-         python3 setup.py bdist_wheel --dist-dir=dist; \
-       elif [ -f python/setup.py ]; then \
-         cd python && python3 setup.py bdist_wheel --dist-dir=dist; \
-       fi \
-    && mkdir -p /app/install \
-    && find . -name "*.whl" -exec cp {} /app/install \;
-# triton_kernels companion package (if present)
-RUN if [ -d triton/python/triton_kernels ]; then \
-        pip install build && cd triton/python/triton_kernels \
-        && python3 -m build --wheel && cp dist/*.whl /app/install; \
-    fi
+# Copy Triton package from nalanzeyu torchenv into a staging dir
+RUN --mount=type=bind,from=triton_source,src=/opt/torchenv/lib/python3.12/site-packages/triton,target=/triton_src \
+    mkdir -p /app/triton_pkg \
+    && cp -r /triton_src /app/triton_pkg/triton \
+    && echo "Triton package staged: $(du -sh /app/triton_pkg/triton | cut -f1)"
 
 
 # ---------------------------------------------------------------------------
@@ -163,12 +158,10 @@ RUN mkdir -p /tensile_gfx906 \
     && echo "Tensile files for gfx906:" && ls /tensile_gfx906/
 
 # ---------------------------------------------------------------------------
-# Stage: Collect all dependency wheels
+# Stage: Collect all dependency wheels (excludes Triton — installed via dir copy)
 # ---------------------------------------------------------------------------
 FROM base AS deps
 RUN mkdir -p /app/debs
-RUN --mount=type=bind,from=build_triton,src=/app/install/,target=/install \
-    cp /install/*.whl /app/debs
 RUN --mount=type=bind,from=build_amdsmi,src=/app/install/,target=/install \
     cp /install/*.whl /app/debs
 RUN --mount=type=bind,from=build_pytorch,src=/app/install/,target=/install \
@@ -182,9 +175,14 @@ RUN --mount=type=bind,from=build_fa,src=/app/install/,target=/install \
 # ---------------------------------------------------------------------------
 FROM base AS build_vllm
 
-# Install all pre-built wheels
+# Install all pre-built wheels (PyTorch, FA, AMDsmi — NOT triton, installed below)
 RUN --mount=type=bind,from=deps,src=/app/debs,target=/install \
     pip install /install/*.whl
+
+# Install Triton from nalanzeyu package dir (git34747741, confirmed gfx906 support)
+RUN --mount=type=bind,from=build_triton,src=/app/triton_pkg/triton,target=/triton_pkg \
+    cp -r /triton_pkg /usr/local/lib/python3.12/dist-packages/triton \
+    && python3 -c "import triton; print('Triton installed:', triton.__version__)"
 
 # Install uv for fast dependency resolution
 RUN curl -LsSf https://astral.sh/uv/install.sh | env UV_INSTALL_DIR="/usr/local/bin" sh
@@ -216,11 +214,16 @@ RUN cd vllm \
 # ---------------------------------------------------------------------------
 FROM base AS final
 
-# Install all wheels
+# Install all wheels (PyTorch, FA, AMDsmi)
 RUN --mount=type=bind,from=deps,src=/app/debs,target=/install \
     pip install /install/*.whl
 
 RUN pip install --upgrade pip huggingface-hub[cli]
+
+# Install Triton from nalanzeyu package dir (gfx906 compatible)
+RUN --mount=type=bind,from=build_triton,src=/app/triton_pkg/triton,target=/triton_pkg \
+    cp -r /triton_pkg /usr/local/lib/python3.12/dist-packages/triton \
+    && python3 -c "import triton; print('Triton installed:', triton.__version__)"
 
 # rocBLAS TensileLibrary for gfx906 (missing from ROCm 7.0, sourced from ROCm 6.3)
 RUN --mount=type=bind,from=rocblas_gfx906,src=/tensile_gfx906/,target=/tensile_gfx906 \
